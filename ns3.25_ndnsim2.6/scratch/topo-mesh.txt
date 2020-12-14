@@ -1,0 +1,43 @@
+# any empty lines and lines starting with '#' symbol is ignored
+
+# The file should contain exactly two sections: router and link, each starting with the corresponding keyword
+
+# router section defines topology nodes and their relative positions (e.g., to use in visualizer)
+router
+
+# each line in this section represents one router and should have the following data
+# node  comment     yPos    xPos
+Node0	NA	25	25
+Node1	NA	25	75
+Node2	NA	50	50
+Node3	NA	75	25
+Node4	NA	75	75
+Node5	NA	75	100
+Node6	NA	75	125
+Node7	NA	75	150
+Node8	NA	75	175
+Node9	NA	75	200
+# link section defines point-to-point links between nodes and characteristics of these links
+
+link
+
+# Each line should be in the following format (only first two are required, the rest can be omitted)
+# srcNode   dstNode     bandwidth   metric  delay   queue
+# bandwidth: link bandwidth
+# metric: routing metric
+# delay:  link delay
+# queue:  MaxPackets for transmission queue on the link (both directions)
+# error:  comma-separated list, specifying class for ErrorModel and necessary attributes
+Node0	Node1	10Mbps	1	10ms	
+Node0	Node2	10Mbps	1	10ms	
+Node0	Node3	10Mbps	1	10ms	
+Node1	Node2	10Mbps	1	10ms	
+Node1	Node4	10Mbps	1	10ms	
+Node2	Node3	10Mbps	1	10ms	
+Node2	Node4	10Mbps	1	10ms	
+Node3	Node4	10Mbps	1	10ms	
+Node4	Node5	10Mbps	1	10ms	
+Node5	Node6	10Mbps	1	10ms	
+Node6	Node7	10Mbps	1	10ms	
+Node7	Node8	10Mbps	1	10ms	
+Node8	Node9	10Mbps	1	10ms	

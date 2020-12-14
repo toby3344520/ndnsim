@@ -1,0 +1,124 @@
+#include "ns3/core-module.h"
+#include "ns3/mobility-module.h"
+#include "ns3/wifi-module.h"
+#include "ns3/ndnSIM/helper/ndn-stack-helper.hpp"
+#include "ns3/ndnSIM/helper/ndn-strategy-choice-helper.hpp"
+#include "ns3/ndnSIM/helper/ndn-app-helper.hpp"
+#include "ns3/ndnSIM-module.h"
+#include "ns3/ndnSIM/apps/ndn-app.hpp"
+
+using namespace ns3;
+
+NS_LOG_COMPONENT_DEFINE ("NDNMANETScriptExample");
+
+void SetNodeMobilityModel(NodeContainer & nodes)
+{
+  MobilityHelper MANETMobility;
+  // 设置节点的初始位置
+  // 节点初始位置示意图（上下左右相邻节点相距100m）
+  // +  0  1  2  3  4  5  6  7  8  9
+  // 0  @  @  @  @  @  @  @  @  @  @
+  // 1  @  @  @  @  @  @  @  @  @  @
+  // 2  @  @  @  @  @  @  @  @  @  @
+  // 3  @  @  @  @  @  @  @  @  @  @
+  // 4  @  @  @  @  @  @  @  @  @  @
+  // 5  @  @  @  @  @  @  @  @  @  @
+  // 6  @  @  @  @  @  @  @  @  @  @
+  // 7  @  @  @  @  @  @  @  @  @  @
+  // 8  @  @  @  @  @  @  @  @  @  @
+  // 9  @  @  @  @  @  @  @  @  @  @
+  MANETMobility.SetPositionAllocator("ns3::GridPositionAllocator",
+                                     "GridWidth", UintegerValue (10),
+                                     "MinX", DoubleValue (0.0),
+                                     "MinY", DoubleValue (0.0),
+                                     "DeltaX", DoubleValue (100.0),
+                                     "DeltaY", DoubleValue (100.0),
+                                     "LayoutType", StringValue("RowFirst"));
+  // 设置节点的移动性模型
+  int64_t streamIndex = 1;
+  ObjectFactory nodePosition;
+  nodePosition.SetTypeId("ns3::RandomRectanglePositionAllocator");
+  nodePosition.Set("X", StringValue("ns3::UniformRandomVariable[Min=0.0|Max=900.0]"));
+  nodePosition.Set("Y", StringValue("ns3::UniformRandomVariable[Min=0.0|Max=900.0]"));
+  Ptr<PositionAllocator> nodePositionAllocator = nodePosition.Create()->GetObject<PositionAllocator>();
+  MANETMobility.SetMobilityModel("ns3::RandomWaypointMobilityModel",
+                                 "Speed", StringValue ("ns3::UniformRandomVariable[Min=1.2|Max=3.6]"), // 节点移动速度： 1.2m/s ~ 3.6m/s
+                                 "Pause", StringValue ("ns3::ConstantRandomVariable[Constant=2.0]"),   // 节点暂停时间： 2s
+                                 "PositionAllocator", PointerValue (nodePositionAllocator));
+  // 安装到节点上
+  MANETMobility.Install(nodes);
+  // if AssignStreams is called before Install, it will not have any effect.
+  int64_t streamsUsed = MANETMobility.AssignStreams(nodes, streamIndex);
+}
+
+int main(int argc, char * argv[])
+{
+  CommandLine cmd;
+  cmd.Parse (argc, argv); // 解析命令行参数
+
+  // 创建节点并设置节点的移动性模型
+  NodeContainer MANETNodes;
+  MANETNodes.Create(100);           // 创建100个节点
+  SetNodeMobilityModel(MANETNodes); // 设置节点的移动性模型
+
+  // 在所有节点上安装Wi-Fi模块
+  Config::SetDefault("ns3::WifiRemoteStationManager::NonUnicastMode",
+                     StringValue("OfdmRate24Mbps"));
+  WifiHelper wifi;
+  wifi.SetStandard(WIFI_PHY_STANDARD_80211a);                                       // OFDM PHY for the 5 GHz band. (Channel 36)
+  wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
+                               "DataMode", StringValue("OfdmRate6Mbps"),
+                               "ControlMode", StringValue("OfdmRate6Mbps"));
+  YansWifiChannelHelper wifiChannelHelper;                                          // 信道
+  wifiChannelHelper.SetPropagationDelay("ns3::ConstantSpeedPropagationDelayModel"); // 设置信道的传播时延模型（光速）
+  wifiChannelHelper.AddPropagationLoss("ns3::RangePropagationLossModel",
+                                       "MaxRange", DoubleValue(100.0));             // 设置信道的传播损失模型和最大传输距离。
+  Ptr<YansWifiChannel> wifiChannel = wifiChannelHelper.Create();
+  YansWifiPhyHelper wifiPhyHelper;                                                  // 物理层
+  wifiPhyHelper.SetErrorRateModel ("ns3::NistErrorRateModel");
+  wifiPhyHelper.SetPcapDataLinkType(YansWifiPhyHelper::DLT_IEEE802_11_RADIO);
+  wifiPhyHelper.SetChannel(wifiChannel);
+  NqosWifiMacHelper wifiMacHelper;                                                  // MAC层
+  wifiMacHelper.SetType("ns3::AdhocWifiMac");                                       // 设置为Ad-hoc模式
+  NetDeviceContainer netDevices;                                                    // 安装到网络设备上
+  netDevices = wifi.Install(wifiPhyHelper, wifiMacHelper, MANETNodes);
+
+  // 在所有节点上安装NDN协议栈
+  ns3::ndn::StackHelper ndnHelper;
+  ndnHelper.setCsSize(100);                                                         // 设置CS的大小（ number of packets ）
+  //ndnHelper.setPolicy("nfd::cs::lru");                                              // 设置缓存替换策略（最近最少使用算法）
+  ndnHelper.SetDefaultRoutes(true);                                                 // 设置默认路由
+  ndnHelper.Install(MANETNodes);
+  ns3::ndn::StrategyChoiceHelper::InstallAll("/myPrefix",
+                                             "/localhost/nfd/strategy/best-route");
+
+  // 消费者
+  NodeContainer consumerNode;
+  consumerNode.Add(MANETNodes.Get(0));                                              // 设置0号节点为消费者
+
+  // 消费者应用层
+  ns3::ndn::AppHelper consumerHelper("ns3::ndn::FileConsumer");
+  consumerHelper.SetAttribute("FileToRequest",
+		                      StringValue("/myprefix/red-rose.mp3"));
+  consumerHelper.SetAttribute("WriteOutfile",StringValue("/home/sun-linux/Desktop/12323.mp3"));
+  consumerHelper.Install(consumerNode);
+
+  // 生产者
+  NodeContainer producerNode;
+  producerNode.Add(MANETNodes.Get(99));                                             // 设置99号节点为生产者
+
+  // 生产者应用层
+  ns3::ndn::AppHelper producerHelper("ns3::ndn::FileServer");
+  producerHelper.SetPrefix("/myprefix");                                            // 设置内容的名字的前缀
+  producerHelper.SetAttribute("ContentDirectory", StringValue("/home/sun-linux/somedata"));
+  producerHelper.Install(producerNode);
+
+  // 设置模拟时间为10分钟
+  Simulator::Stop(Seconds(600));
+
+  // 开始模拟
+  Simulator::Run ();
+  Simulator::Destroy ();
+
+  return 0;
+}
